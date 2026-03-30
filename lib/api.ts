@@ -172,6 +172,21 @@ export function useLogs(filters?: LogsFilter) {
   })
 }
 
+// ─── Live Logs (fast poll for capture dashboard) ──────────────────────────
+
+export function useLiveLogs(isCapturing: boolean) {
+  const params = new URLSearchParams()
+  params.set('limit', '100')
+  const qs = `?${params.toString()}`
+
+  return useQuery({
+    queryKey: ['live-logs'],
+    queryFn: () => apiCall<LogsResponse>(`/logs${qs}`),
+    staleTime: isCapturing ? 2000 : 10000,
+    refetchInterval: isCapturing ? 2000 : 10000,
+  })
+}
+
 // ─── Capture ──────────────────────────────────────────────────────────────
 
 export function useCaptureStatus() {

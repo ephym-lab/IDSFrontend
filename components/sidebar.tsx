@@ -15,6 +15,8 @@ import {
   Shield,
   LogOut,
   ChevronRight,
+  Radar,
+  ExternalLink,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useCaptureStatus, useStartCapture, useStopCapture } from '@/lib/api'
@@ -27,6 +29,11 @@ const navigationItems = [
     href: '/dashboard',
     icon: LayoutDashboard,
     exact: true,
+  },
+  {
+    name: 'Live Capture',
+    href: '/dashboard/live-capture',
+    icon: Radar,
   },
   {
     name: 'Alerts',
@@ -49,6 +56,7 @@ const navigationItems = [
     icon: Upload,
   },
 ]
+
 
 export function Sidebar() {
   const [isOpen, setIsOpen] = useState(true)
@@ -176,7 +184,7 @@ export function Sidebar() {
         </div>
 
         {/* Live Capture Control */}
-        <div className="px-3 pb-3">
+        <div className="px-3 pb-3 space-y-1.5">
           <button
             onClick={handleCaptureToggle}
             id="capture-toggle-sidebar"
@@ -217,6 +225,18 @@ export function Sidebar() {
               </p>
             </div>
           </button>
+          {isCapturing && (
+            <Link
+              href="/dashboard/live-capture"
+              onClick={() => setIsOpen(false)}
+              id="nav-live-capture-view"
+              className="flex items-center justify-center gap-1.5 w-full py-1.5 rounded-md text-[10px] font-mono font-semibold text-cyan-400 hover:text-cyan-300 transition-colors"
+              style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.15)' }}
+            >
+              <ExternalLink className="w-3 h-3" />
+              View Live Dashboard
+            </Link>
+          )}
         </div>
 
         {/* Footer */}
