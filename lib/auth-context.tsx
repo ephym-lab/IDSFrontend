@@ -2,104 +2,110 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+// ─── Types ────────────────────────────────────────────────────────────────
+
 export interface User {
-  id: string
+  id: number
+  full_name: string
   email: string
-  name: string
+  created_at: string
 }
 
 interface AuthContextType {
   user: User | null
+  token: string | null
   isLoading: boolean
   signin: (email: string, password: string) => Promise<void>
-  signup: (email: string, password: string, name: string) => Promise<void>
+  signup: (full_name: string, email: string, password: string) => Promise<void>
   logout: () => void
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+async function authFetch<T>(endpoint: string, body: object): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    // FastAPI validation errors come as { detail: [...] }
+    if (Array.isArray(data?.detail)) {
+      const msg = data.detail.map((e: { msg: string }) => e.msg).join(', ')
+      throw new Error(msg)
+    }
+    throw new Error(data?.detail || `Request failed (${response.status})`)
+  }
+
+  return data as T
+}
+
+// ─── Context ──────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Check if user is logged in on mount
+  // Rehydrate session from localStorage on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('user')
-    if (storedUser) {
-      try {
+    try {
+      const storedToken = localStorage.getItem('access_token')
+      const storedUser = localStorage.getItem('user')
+      if (storedToken && storedUser) {
+        setToken(storedToken)
         setUser(JSON.parse(storedUser))
-      } catch (error) {
-        console.error('Failed to parse stored user:', error)
-        localStorage.removeItem('user')
       }
+    } catch {
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('user')
+    } finally {
+      setIsLoading(false)
     }
-    // Initialize with demo account for testing
-    const users = JSON.parse(localStorage.getItem('users') || '[]')
-    if (users.length === 0) {
-      const demoUsers = [
-        { id: 'demo_001', email: 'demo@example.com', password: 'demo123', name: 'Demo User' },
-        { id: 'demo_002', email: 'admin@example.com', password: 'admin123', name: 'Admin User' },
-      ]
-      localStorage.setItem('users', JSON.stringify(demoUsers))
-    }
-    setIsLoading(false)
   }, [])
 
   const signin = async (email: string, password: string) => {
-    // Validate inputs
-    if (!email || !password) {
-      throw new Error('Email and password are required')
-    }
+    const data = await authFetch<{
+      access_token: string
+      token_type: string
+      user: User
+    }>('/auth/login', { email, password })
 
-    // In a real app, this would call an API endpoint
-    // For MVP, we'll simulate authentication
-    if (password.length < 6) {
-      throw new Error('Invalid credentials')
-    }
-
-    const newUser: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      email,
-      name: email.split('@')[0],
-    }
-
-    setUser(newUser)
-    localStorage.setItem('user', JSON.stringify(newUser))
+    setToken(data.access_token)
+    setUser(data.user)
+    localStorage.setItem('access_token', data.access_token)
+    localStorage.setItem('user', JSON.stringify(data.user))
   }
 
-  const signup = async (email: string, password: string, name: string) => {
-    // Validate inputs
-    if (!email || !password || !name) {
-      throw new Error('All fields are required')
-    }
+  const signup = async (full_name: string, email: string, password: string) => {
+    const data = await authFetch<{
+      access_token: string
+      token_type: string
+      user: User
+    }>('/auth/signup', { full_name, email, password })
 
-    if (password.length < 6) {
-      throw new Error('Password must be at least 6 characters')
-    }
-
-    if (!email.includes('@')) {
-      throw new Error('Please enter a valid email address')
-    }
-
-    // In a real app, this would call an API endpoint
-    // For MVP, we'll simulate registration
-    const newUser: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      email,
-      name,
-    }
-
-    setUser(newUser)
-    localStorage.setItem('user', JSON.stringify(newUser))
+    setToken(data.access_token)
+    setUser(data.user)
+    localStorage.setItem('access_token', data.access_token)
+    localStorage.setItem('user', JSON.stringify(data.user))
   }
 
   const logout = () => {
     setUser(null)
+    setToken(null)
+    localStorage.removeItem('access_token')
     localStorage.removeItem('user')
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, signin, signup, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, signin, signup, logout }}>
       {children}
     </AuthContext.Provider>
   )

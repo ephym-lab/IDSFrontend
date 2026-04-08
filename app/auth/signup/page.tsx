@@ -42,13 +42,19 @@ export default function SignUpPage() {
     setIsLoading(true)
 
     try {
-      await signup(email, password, name)
-      toast.success('Account created successfully')
+      await signup(name, email, password)
+      toast.success('Account Created', {
+        description: `Welcome aboard, ${name}! Your account is ready.`,
+        duration: 4000,
+      })
       router.push('/dashboard')
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign up failed'
       setError(errorMessage)
-      toast.error(errorMessage)
+      toast.error('Sign up failed', {
+        description: errorMessage,
+        duration: 5000,
+      })
     } finally {
       setIsLoading(false)
     }

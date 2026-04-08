@@ -32,12 +32,18 @@ export default function SignInPage() {
 
     try {
       await signin(email, password)
-      toast.success('Signed in successfully')
+      toast.success('Welcome back!', {
+        description: 'You have been signed in successfully.',
+        duration: 4000,
+      })
       router.push('/dashboard')
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign in failed'
       setError(errorMessage)
-      toast.error(errorMessage)
+      toast.error('Sign in failed', {
+        description: errorMessage,
+        duration: 5000,
+      })
     } finally {
       setIsLoading(false)
     }
@@ -150,12 +156,7 @@ export default function SignInPage() {
           </Link>
         </div>
 
-        {/* Demo Credentials */}
-        <div className="mt-6 p-4 rounded-lg bg-muted/20 border border-border">
-          <p className="text-xs font-medium text-muted-foreground mb-2">Demo Credentials:</p>
-          <p className="text-xs text-muted-foreground font-mono">Email: demo@example.com</p>
-          <p className="text-xs text-muted-foreground font-mono">Password: demo123</p>
-        </div>
+
       </motion.div>
     </div>
   )

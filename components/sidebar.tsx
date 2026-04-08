@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -75,6 +75,24 @@ export function Sidebar() {
 
   const isCapturing = captureData?.capturing ?? false
 
+  // On desktop the sidebar must always stay open.
+  // When the route changes (e.g. after a nav-link click that set isOpen=false
+  // on mobile), restore it on desktop screens.
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth >= 768) setIsOpen(true)
+    }
+    // Re-open on desktop whenever route changes
+    if (window.innerWidth >= 768) setIsOpen(true)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [pathname])
+
+  // Only close the sidebar when navigating on mobile
+  const handleNavClick = () => {
+    if (window.innerWidth < 768) setIsOpen(false)
+  }
+
   const handleCaptureToggle = () => {
     if (isCapturing) {
       stopCapture.mutate(undefined, {
@@ -144,7 +162,7 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => setIsOpen(false)}
+                onClick={handleNavClick}
                 id={`nav-${item.name.toLowerCase().replace(' ', '-')}`}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative',
@@ -234,7 +252,7 @@ export function Sidebar() {
           {isCapturing && (
             <Link
               href="/dashboard/live-capture"
-              onClick={() => setIsOpen(false)}
+              onClick={handleNavClick}
               id="nav-live-capture-view"
               className="flex items-center justify-center gap-1.5 w-full py-1.5 rounded-md text-[10px] font-mono font-semibold text-cyan-400 hover:text-cyan-300 transition-colors"
               style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.15)' }}
@@ -251,11 +269,11 @@ export function Sidebar() {
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/20 flex items-center justify-center flex-shrink-0">
                 <span className="text-xs font-semibold text-cyan-400">
-                  {user?.name?.[0]?.toUpperCase() ?? 'U'}
+                  {user?.full_name?.[0]?.toUpperCase() ?? 'U'}
                 </span>
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-300 truncate">{user?.name ?? 'User'}</p>
+                <p className="text-xs font-medium text-slate-300 truncate">{user?.full_name ?? 'User'}</p>
                 <p className="text-[10px] text-slate-600 truncate font-mono">{user?.email ?? ''}</p>
               </div>
             </div>
