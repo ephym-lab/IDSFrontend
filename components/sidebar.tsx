@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Radar,
   ExternalLink,
+  FileText,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useCaptureStatus, useStartCapture, useStopCapture } from '@/lib/api'
@@ -54,6 +55,11 @@ const navigationItems = [
     name: 'Batch Upload',
     href: '/dashboard/upload',
     icon: Upload,
+  },
+  {
+    name: 'Reports',
+    href: '/dashboard/reports',
+    icon: FileText,
   },
 ]
 
