@@ -195,16 +195,19 @@ export function useLogs(filters?: LogsFilter) {
 
 // ─── Live Logs (fast poll for capture dashboard) ──────────────────────────
 
-export function useLiveLogs(isCapturing: boolean) {
+export function useLiveLogs(isCapturing: boolean, sessionStart?: string) {
   const params = new URLSearchParams()
-  params.set('limit', '100')
+  params.set('limit', '200')
+  if (sessionStart) params.set('from_time', sessionStart)
   const qs = `?${params.toString()}`
 
   return useQuery({
-    queryKey: ['live-logs'],
+    queryKey: ['live-logs', sessionStart],
     queryFn: () => apiCall<LogsResponse>(`/logs${qs}`),
     staleTime: isCapturing ? 2000 : 10000,
     refetchInterval: isCapturing ? 2000 : 10000,
+    // Only poll while capturing or while a session is still in view
+    enabled: isCapturing || !!sessionStart,
   })
 }
 

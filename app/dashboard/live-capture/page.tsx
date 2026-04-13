@@ -300,7 +300,10 @@ export default function LiveCapturePage() {
   const stop = useStopCapture()
   const isPending = start.isPending || stop.isPending
 
-  const { data: logsData } = useLiveLogs(isCapturing)
+  // Track when this capture session started so we only show packets from now
+  const [sessionStart, setSessionStart] = useState<string | undefined>(undefined)
+
+  const { data: logsData } = useLiveLogs(isCapturing, sessionStart)
   const { data: stats } = useStats()
 
   const logs = logsData?.logs ?? []
@@ -365,9 +368,20 @@ export default function LiveCapturePage() {
         onError: () => toast.error('Failed to stop capture'),
       })
     } else {
+      // Record the exact moment capture starts — only packets after this time
+      // will be shown in the Live Log Stream.
+      const now = new Date().toISOString()
+      setSessionStart(now)
+      // Reset sparkline and packet counter for the new session
+      setSparkline([])
+      prevCountRef.current = 0
+
       start.mutate(undefined, {
         onSuccess: () => toast.success('Live capture started', { description: 'Sniffing network packets…' }),
-        onError: () => toast.error('Failed to start capture'),
+        onError: () => {
+          toast.error('Failed to start capture')
+          setSessionStart(undefined)
+        },
       })
     }
   }, [isCapturing, start, stop])
