@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { queryClient } from '@/app/providers'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -102,6 +103,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null)
     localStorage.removeItem('access_token')
     localStorage.removeItem('user')
+    // Wipe all cached query data so a subsequent user sees a clean slate.
+    queryClient.clear()
   }
 
   return (

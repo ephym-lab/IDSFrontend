@@ -91,7 +91,7 @@ export function Sidebar() {
               <User className="w-4 h-4 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-card-foreground truncate">{user.name}</p>
+              <p className="text-xs font-medium text-card-foreground truncate">{user.full_name}</p>
               <p className="text-xs text-muted-foreground truncate">{user.email}</p>
             </div>
           </div>

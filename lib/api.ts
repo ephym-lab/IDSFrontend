@@ -108,6 +108,16 @@ function getAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+/** Clear session and redirect to sign-in on 401. */
+function handleUnauthorized(): never {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('user')
+    window.location.href = '/auth/signin'
+  }
+  throw new Error('Unauthorized')
+}
+
 async function apiCall<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     headers: {
@@ -117,6 +127,10 @@ async function apiCall<T>(endpoint: string, options?: RequestInit): Promise<T> {
     },
     ...options,
   })
+
+  if (response.status === 401) {
+    handleUnauthorized()
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
@@ -247,8 +261,16 @@ export function useUploadCSV() {
       formData.append('file', file)
       return fetch(`${API_BASE_URL}/upload`, {
         method: 'POST',
+        headers: {
+          // Do NOT set Content-Type here — the browser sets it with the correct
+          // multipart boundary when using FormData.
+          ...getAuthHeaders(),
+        },
         body: formData,
       }).then(async (res) => {
+        if (res.status === 401) {
+          handleUnauthorized()
+        }
         if (!res.ok) {
           const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
           throw new Error(err.detail || 'Upload failed')
