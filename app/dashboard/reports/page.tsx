@@ -196,6 +196,11 @@ export default function ReportsPage() {
   const [severityFilter, setSeverityFilter] = useState<string>('all')
   const [showFullTable, setShowFullTable] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [attackTypeFilter, setAttackTypeFilter] = useState<string>('all')
+  const [ipFilter, setIpFilter] = useState<string>('')
+  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(0)
+  const [trafficTypeFilter, setTrafficTypeFilter] = useState<'all' | 'attack' | 'normal'>('all')
+  const [showFilters, setShowFilters] = useState(false)
   const reportRef = useRef<HTMLDivElement>(null)
 
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useStats()
@@ -208,22 +213,48 @@ export default function ReportsPage() {
   const allAlerts = alertsData?.alerts ?? []
   const allLogs = logsData?.logs ?? []
 
-  // Compute derived stats
-  const attackLogs = allLogs.filter(l => l.is_attack)
-  const normalLogs = allLogs.filter(l => !l.is_attack)
-  const attackRate = allLogs.length > 0 ? Math.round((attackLogs.length / allLogs.length) * 100) : 0
+  // Apply additional filters to alerts
+  const filteredAlerts = allAlerts.filter(a => {
+    // Attack type filter
+    if (attackTypeFilter !== 'all' && a.attack_type !== attackTypeFilter) return false
+    // IP filter (source or destination)
+    if (ipFilter && !a.src_ip.includes(ipFilter) && !a.dst_ip.includes(ipFilter)) return false
+    // Confidence threshold filter
+    if (Math.round(a.confidence * 100) < confidenceThreshold) return false
+    return true
+  })
 
-  const avgConfidence = allLogs.length > 0
-    ? Math.round((allLogs.reduce((s, l) => s + l.confidence, 0) / allLogs.length) * 100)
+  // Apply filters to logs
+  const filteredLogs = allLogs.filter(l => {
+    // Traffic type filter
+    if (trafficTypeFilter === 'attack' && !l.is_attack) return false
+    if (trafficTypeFilter === 'normal' && l.is_attack) return false
+    // IP filter
+    if (ipFilter && !l.src_ip.includes(ipFilter) && !l.dst_ip.includes(ipFilter)) return false
+    // Confidence threshold filter
+    if (Math.round(l.confidence * 100) < confidenceThreshold) return false
+    return true
+  })
+
+  // Compute derived stats
+  const attackLogs = filteredLogs.filter(l => l.is_attack)
+  const normalLogs = filteredLogs.filter(l => !l.is_attack)
+  const attackRate = filteredLogs.length > 0 ? Math.round((attackLogs.length / filteredLogs.length) * 100) : 0
+
+  const avgConfidence = filteredLogs.length > 0
+    ? Math.round((filteredLogs.reduce((s, l) => s + l.confidence, 0) / filteredLogs.length) * 100)
     : 0
 
   // Severity breakdown for alerts
-  const severityCounts = allAlerts.reduce((acc, a) => {
+  const severityCounts = filteredAlerts.reduce((acc, a) => {
     acc[a.severity] = (acc[a.severity] ?? 0) + 1
     return acc
   }, {} as Record<string, number>)
 
-  const displayedAlerts = showFullTable ? allAlerts : allAlerts.slice(0, 10)
+  const displayedAlerts = showFullTable ? filteredAlerts : filteredAlerts.slice(0, 10)
+
+  // Get unique attack types from all alerts for filter dropdown
+  const uniqueAttackTypes = Array.from(new Set(allAlerts.map(a => a.attack_type))).sort()
 
   // ─── Refresh
   const handleRefresh = useCallback(() => {
@@ -234,12 +265,12 @@ export default function ReportsPage() {
 
   // ─── Export as CSV
   const exportCSV = useCallback(() => {
-    if (allAlerts.length === 0) {
+    if (filteredAlerts.length === 0) {
       toast.error('No alert data to export')
       return
     }
     const header = ['ID', 'Timestamp', 'Source IP', 'Destination IP', 'Attack Type', 'Confidence', 'Severity']
-    const rows = allAlerts.map(a => [
+    const rows = filteredAlerts.map(a => [
       a.id,
       a.timestamp,
       a.src_ip,
@@ -257,16 +288,22 @@ export default function ReportsPage() {
     a.click()
     URL.revokeObjectURL(url)
     toast.success('Alerts exported as CSV')
-  }, [allAlerts])
+  }, [filteredAlerts])
 
   // ─── Export as JSON
   const exportJSON = useCallback(() => {
-    if (!stats && allAlerts.length === 0) {
+    if (!stats && filteredAlerts.length === 0) {
       toast.error('No data to export')
       return
     }
     const report = {
       generated_at: new Date().toISOString(),
+      filters_applied: {
+        attack_type: attackTypeFilter !== 'all' ? attackTypeFilter : null,
+        ip_address: ipFilter || null,
+        confidence_threshold: confidenceThreshold > 0 ? confidenceThreshold : null,
+        traffic_type: trafficTypeFilter !== 'all' ? trafficTypeFilter : null,
+      },
       summary: {
         total_traffic: stats?.total_traffic ?? 0,
         alerts_today: stats?.alerts_today ?? 0,
@@ -275,7 +312,7 @@ export default function ReportsPage() {
         attacks_by_class: stats?.attacks_by_class ?? {},
       },
       severity_breakdown: severityCounts,
-      alerts: allAlerts,
+      alerts: filteredAlerts,
     }
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -285,7 +322,7 @@ export default function ReportsPage() {
     a.click()
     URL.revokeObjectURL(url)
     toast.success('Report exported as JSON')
-  }, [stats, allAlerts, attackRate, avgConfidence, severityCounts])
+  }, [stats, filteredAlerts, attackRate, avgConfidence, severityCounts, attackTypeFilter, ipFilter, confidenceThreshold, trafficTypeFilter])
 
   // ─── Generate full HTML report
   const generateHTMLReport = useCallback(async () => {
@@ -299,7 +336,7 @@ export default function ReportsPage() {
       .map(([t, c]) => `<tr><td>${t}</td><td>${c.toLocaleString()}</td></tr>`)
       .join('')
 
-    const alertRows = allAlerts.slice(0, 50).map(a => `
+    const alertRows = filteredAlerts.slice(0, 50).map(a => `
       <tr>
         <td>${a.id}</td>
         <td>${formatTimestamp(a.timestamp)}</td>
@@ -405,7 +442,7 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url)
     setIsGenerating(false)
     toast.success('HTML report generated and downloaded')
-  }, [stats, allAlerts, attackRate, avgConfidence, severityCounts, normalLogs])
+  }, [stats, filteredAlerts, attackRate, avgConfidence, severityCounts, normalLogs])
 
   const isLoading = statsLoading || alertsLoading || logsLoading
 
@@ -481,36 +518,171 @@ export default function ReportsPage() {
       </motion.div>
 
       {/* ── Filters */}
-      <motion.div variants={fade(0.05)} className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-1.5 text-slate-600">
-          <Filter className="w-3.5 h-3.5" />
-          <span className="text-xs font-mono uppercase tracking-widest">Severity</span>
+      <motion.div variants={fade(0.05)} className="space-y-4">
+        {/* Quick Severity Filter */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 text-slate-600">
+            <Filter className="w-3.5 h-3.5" />
+            <span className="text-xs font-mono uppercase tracking-widest">Severity</span>
+          </div>
+          {(['all', 'High', 'Medium', 'Low'] as const).map(s => (
+            <button
+              key={s}
+              id={`filter-severity-${s.toLowerCase()}`}
+              onClick={() => setSeverityFilter(s)}
+              className={cn(
+                'px-3 py-1 rounded-full text-xs font-mono font-semibold border transition-all',
+                severityFilter === s
+                  ? s === 'all'
+                    ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                    : s === 'High'
+                    ? 'bg-red-500/15 border-red-500/40 text-red-400'
+                    : s === 'Medium'
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+                    : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                  : 'border-slate-700 text-slate-600 hover:text-slate-400 hover:border-slate-600'
+              )}
+            >
+              {s === 'all' ? 'All' : s}
+              {s !== 'all' && severityCounts[s] !== undefined && (
+                <span className="ml-1.5 opacity-60">({severityCounts[s] ?? 0})</span>
+              )}
+            </button>
+          ))}
         </div>
-        {(['all', 'High', 'Medium', 'Low'] as const).map(s => (
-          <button
-            key={s}
-            id={`filter-severity-${s.toLowerCase()}`}
-            onClick={() => setSeverityFilter(s)}
-            className={cn(
-              'px-3 py-1 rounded-full text-xs font-mono font-semibold border transition-all',
-              severityFilter === s
-                ? s === 'all'
-                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
-                  : s === 'High'
-                  ? 'bg-red-500/15 border-red-500/40 text-red-400'
-                  : s === 'Medium'
-                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
-                  : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                : 'border-slate-700 text-slate-600 hover:text-slate-400 hover:border-slate-600'
-            )}
-          >
-            {s === 'all' ? 'All' : s}
-            {s !== 'all' && severityCounts[s] !== undefined && (
-              <span className="ml-1.5 opacity-60">({severityCounts[s] ?? 0})</span>
-            )}
-          </button>
-        ))}
+
+        {/* Advanced Filters Toggle */}
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="flex items-center gap-2 text-xs font-mono text-slate-600 hover:text-slate-400 transition-colors"
+        >
+          {showFilters ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          <span className="uppercase tracking-widest">
+            {showFilters ? 'Hide' : 'Show'} Advanced Filters
+          </span>
+          {(attackTypeFilter !== 'all' || ipFilter || confidenceThreshold > 0 || trafficTypeFilter !== 'all') && (
+            <span className="ml-1.5 px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 text-[10px]">
+              {[
+                attackTypeFilter !== 'all' ? 1 : 0,
+                ipFilter ? 1 : 0,
+                confidenceThreshold > 0 ? 1 : 0,
+                trafficTypeFilter !== 'all' ? 1 : 0,
+              ].reduce((a, b) => a + b, 0)} active
+            </span>
+          )}
+        </button>
+
+        {/* Advanced Filters */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="glass rounded-xl p-4 space-y-4 border border-slate-700/30"
+            >
+              {/* Attack Type Filter */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest">Attack Type</label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <button
+                    onClick={() => setAttackTypeFilter('all')}
+                    className={cn(
+                      'px-2 py-1 rounded text-xs font-mono transition-all border',
+                      attackTypeFilter === 'all'
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                        : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                    )}
+                  >
+                    All
+                  </button>
+                  {uniqueAttackTypes.map(type => (
+                    <button
+                      key={type}
+                      onClick={() => setAttackTypeFilter(type)}
+                      className={cn(
+                        'px-2 py-1 rounded text-xs font-mono transition-all border',
+                        attackTypeFilter === type
+                          ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                          : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                      )}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* IP Address Filter */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest">IP Address (partial match)</label>
+                <input
+                  type="text"
+                  placeholder="Search by IP..."
+                  value={ipFilter}
+                  onChange={(e) => setIpFilter(e.target.value)}
+                  className="w-full mt-2 px-3 py-2 bg-slate-900/50 border border-slate-700 rounded text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+                />
+              </div>
+
+              {/* Confidence Threshold */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest flex items-center justify-between">
+                  <span>Min Confidence</span>
+                  <span className="text-cyan-400">{confidenceThreshold}%</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={confidenceThreshold}
+                  onChange={(e) => setConfidenceThreshold(parseInt(e.target.value))}
+                  className="w-full mt-2 accent-cyan-500"
+                />
+              </div>
+
+              {/* Traffic Type Filter */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest">Traffic Type</label>
+                <div className="flex gap-2 mt-2">
+                  {(['all', 'attack', 'normal'] as const).map(type => (
+                    <button
+                      key={type}
+                      onClick={() => setTrafficTypeFilter(type)}
+                      className={cn(
+                        'px-3 py-1 rounded-full text-xs font-mono font-semibold border transition-all',
+                        trafficTypeFilter === type
+                          ? type === 'all'
+                            ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                            : type === 'attack'
+                            ? 'bg-red-500/15 border-red-500/40 text-red-400'
+                            : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                          : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                      )}
+                    >
+                      {type === 'all' ? 'All Traffic' : type === 'attack' ? '⚠ Attacks' : '✓ Normal'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reset Button */}
+              <button
+                onClick={() => {
+                  setAttackTypeFilter('all')
+                  setIpFilter('')
+                  setConfidenceThreshold(0)
+                  setTrafficTypeFilter('all')
+                }}
+                className="w-full px-3 py-2 text-xs font-mono text-slate-600 hover:text-slate-400 border border-slate-700 rounded hover:bg-slate-900/50 transition-all"
+              >
+                Reset Filters
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
+
 
       {/* ── Summary KPI cards */}
       <motion.div variants={fade(0.08)} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -654,12 +826,20 @@ export default function ReportsPage() {
               <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-400" />
                 Alert Log
-                {allAlerts.length > 0 && (
-                  <span className="text-xs font-mono text-slate-600 ml-1">({allAlerts.length} total)</span>
+                {filteredAlerts.length > 0 && (
+                  <span className="text-xs font-mono text-slate-600 ml-1">({filteredAlerts.length} {filteredAlerts.length !== allAlerts.length ? 'filtered' : 'total'})</span>
                 )}
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
-                {severityFilter !== 'all' ? `Filtered: ${severityFilter} severity` : 'All severity levels'}
+                {severityFilter !== 'all' || attackTypeFilter !== 'all' || ipFilter || confidenceThreshold > 0 || trafficTypeFilter !== 'all'
+                  ? `Filtered: ${[
+                    severityFilter !== 'all' ? severityFilter : '',
+                    attackTypeFilter !== 'all' ? attackTypeFilter : '',
+                    ipFilter ? `IP: ${ipFilter}` : '',
+                    confidenceThreshold > 0 ? `≥${confidenceThreshold}% conf` : '',
+                    trafficTypeFilter !== 'all' ? trafficTypeFilter : '',
+                  ].filter(Boolean).join(', ')}`
+                  : 'All severity levels'}
               </p>
             </div>
             <button
@@ -677,10 +857,10 @@ export default function ReportsPage() {
             <div className="p-5 space-y-3">
               {[...Array(6)].map((_, i) => <div key={i} className="skeleton h-10 w-full rounded-lg" />)}
             </div>
-          ) : allAlerts.length === 0 ? (
+          ) : filteredAlerts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <CheckCircle2 className="w-10 h-10 text-emerald-500/40" />
-              <p className="text-slate-600 text-sm">No alerts found for the selected filter</p>
+              <p className="text-slate-600 text-sm">No alerts found for the selected filters</p>
             </div>
           ) : (
             <>
@@ -747,13 +927,13 @@ export default function ReportsPage() {
                   </tbody>
                 </table>
               </div>
-              {!showFullTable && allAlerts.length > 10 && (
+              {!showFullTable && filteredAlerts.length > 10 && (
                 <div className="px-5 py-3 border-t border-[#0f2040] text-center">
                   <button
                     onClick={() => setShowFullTable(true)}
                     className="text-xs font-mono text-cyan-400 hover:text-cyan-300 transition-colors"
                   >
-                    Show {allAlerts.length - 10} more alerts ↓
+                    Show {filteredAlerts.length - 10} more alerts ↓
                   </button>
                 </div>
               )}
@@ -771,17 +951,17 @@ export default function ReportsPage() {
                 <Activity className="w-4 h-4 text-cyan-400" />
                 Recent Traffic Snapshot
               </h2>
-              <p className="text-xs text-slate-600 mt-0.5">Latest {Math.min(allLogs.length, 15)} log entries</p>
+              <p className="text-xs text-slate-600 mt-0.5">Latest {Math.min(filteredLogs.length, 15)} log entries</p>
             </div>
           </div>
           {logsLoading ? (
             <div className="p-5 space-y-2">
               {[...Array(5)].map((_, i) => <div key={i} className="skeleton h-8 w-full rounded" />)}
             </div>
-          ) : allLogs.length === 0 ? (
+          ) : filteredLogs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Activity className="w-10 h-10 text-slate-700" />
-              <p className="text-slate-600 text-sm">No traffic logs available</p>
+              <p className="text-slate-600 text-sm">No traffic logs available for the selected filters</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -796,7 +976,7 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {allLogs.slice(0, 15).map((log, idx) => (
+                  {filteredLogs.slice(0, 15).map((log, idx) => (
                     <tr
                       key={log.id}
                       className={cn(

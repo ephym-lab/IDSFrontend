@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
-import { Shield, BarChart3, AlertTriangle, Network, Upload, Settings, LogOut, User } from 'lucide-react'
+import { Shield, BarChart3, AlertTriangle, Network, Upload, Settings, LogOut, User, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -29,9 +29,22 @@ const navigationItems = [
     icon: Upload,
   },
   {
+    label: 'Feedback',
+    href: '/dashboard/feedback',
+    icon: MessageSquare,
+  },
+  {
     label: 'Settings',
     href: '/dashboard/settings',
     icon: Settings,
+  },
+]
+
+const adminNavigationItems = [
+  {
+    label: 'Feedback Mgmt',
+    href: '/dashboard/admin/feedback',
+    icon: MessageSquare,
   },
 ]
 
@@ -81,6 +94,37 @@ export function Sidebar() {
             </Link>
           )
         })}
+
+        {/* Admin Section */}
+        {user?.role === 'admin' && (
+          <>
+            <div className="pt-4 pb-2">
+              <p className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Admin
+              </p>
+            </div>
+            {adminNavigationItems.map((item) => {
+              const Icon = item.icon
+              const isActive = pathname === item.href
+
+              return (
+                <Link key={item.href} href={item.href}>
+                  <div
+                    className={cn(
+                      'flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
+                      isActive
+                        ? 'bg-primary/20 text-primary border border-primary/50'
+                        : 'text-muted-foreground hover:text-card-foreground hover:bg-muted/50'
+                    )}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span className="text-sm font-medium">{item.label}</span>
+                  </div>
+                </Link>
+              )
+            })}
+          </>
+        )}
       </nav>
 
       {/* Footer - User Info & Logout */}

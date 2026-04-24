@@ -14,6 +14,8 @@ import {
   TrendingUp,
   Clock,
   ChevronDown,
+  ChevronUp,
+  Search,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -307,6 +309,30 @@ export default function LiveCapturePage() {
   const { data: stats } = useStats()
 
   const logs = logsData?.logs ?? []
+  
+  // Filter states
+  const [searchQuery, setSearchQuery] = useState('')
+  const [trafficTypeFilter, setTrafficTypeFilter] = useState<'all' | 'attack' | 'normal'>('all')
+  const [classFilter, setClassFilter] = useState<string>('all')
+  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(0)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  // Get unique classes from current logs
+  const uniqueClasses = Array.from(new Set(logs.map(l => l.predicted_class))).sort()
+
+  // Apply all filters to logs
+  const filtered = logs.filter(l => {
+    // Type filter
+    if (trafficTypeFilter === 'attack' && !l.is_attack) return false
+    if (trafficTypeFilter === 'normal' && l.is_attack) return false
+    // Search query (IP or class)
+    if (searchQuery && !l.src_ip.includes(searchQuery) && !l.dst_ip.includes(searchQuery) && !l.predicted_class.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    // Class filter
+    if (classFilter !== 'all' && l.predicted_class !== classFilter) return false
+    // Confidence threshold
+    if (Math.round(l.confidence * 100) < confidenceThreshold) return false
+    return true
+  })
 
   // ── Scroll to bottom ref ─────────────────────────────────────────────────
   const logEndRef = useRef<HTMLDivElement>(null)
@@ -339,10 +365,10 @@ export default function LiveCapturePage() {
   }, [logs.length])
 
   // ── Derived stats from logs ──────────────────────────────────────────────
-  const attackLogs = logs.filter((l) => l.is_attack)
-  const normalLogs = logs.filter((l) => !l.is_attack)
+  const attackLogs = filtered.filter((l) => l.is_attack)
+  const normalLogs = filtered.filter((l) => !l.is_attack)
 
-  const severityCounts = logs.reduce(
+  const severityCounts = filtered.reduce(
     (acc, l) => {
       if (l.severity === 'High') acc.High++
       else if (l.severity === 'Medium') acc.Medium++
@@ -507,6 +533,146 @@ export default function LiveCapturePage() {
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.30 }}
+          className="space-y-3"
+        >
+          {/* Filters */}
+          <div className="space-y-2">
+            {/* Quick Search & Type Filters */}
+            <div className="glass rounded-xl p-3 space-y-2">
+              <div className="flex gap-2 flex-col sm:flex-row">
+                {/* Search Bar */}
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
+                  <input
+                    type="text"
+                    placeholder="Search by IP or class..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-900/50 border border-slate-700 rounded text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+                  />
+                </div>
+
+                {/* Type Filter */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-slate-600 font-mono">TYPE:</span>
+                  {(['all', 'attack', 'normal'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setTrafficTypeFilter(t)}
+                      className={cn(
+                        'px-1.5 py-0.5 rounded text-[10px] font-mono transition-all border',
+                        trafficTypeFilter === t
+                          ? t === 'attack'
+                            ? 'bg-red-500/15 border-red-500/40 text-red-400'
+                            : t === 'normal'
+                              ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                              : 'bg-slate-700/30 border-slate-700 text-slate-300'
+                          : 'text-slate-600 border-slate-800 hover:border-slate-600'
+                      )}
+                    >
+                      {t === 'all' ? 'All' : t === 'attack' ? '⚠' : '✓'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Advanced Toggle */}
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="flex items-center gap-1.5 text-[10px] font-mono text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                {showAdvanced ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                <span className="uppercase tracking-widest">
+                  {showAdvanced ? 'Hide' : 'Show'} Filters
+                </span>
+                {(classFilter !== 'all' || confidenceThreshold > 0) && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 text-[9px]">
+                    {[classFilter !== 'all' ? 1 : 0, confidenceThreshold > 0 ? 1 : 0].reduce((a, b) => a + b, 0)} active
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Advanced Filters */}
+            <AnimatePresence>
+              {showAdvanced && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="glass rounded-xl p-3 space-y-2 border border-slate-700/30"
+                >
+                  {/* Class Filter */}
+                  <div>
+                    <label className="text-[10px] font-mono text-slate-600 uppercase tracking-widest">Predicted Class</label>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      <button
+                        onClick={() => setClassFilter('all')}
+                        className={cn(
+                          'px-1.5 py-0.5 rounded text-[10px] font-mono transition-all border',
+                          classFilter === 'all'
+                            ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                            : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                        )}
+                      >
+                        All
+                      </button>
+                      {uniqueClasses.map(cls => (
+                        <button
+                          key={cls}
+                          onClick={() => setClassFilter(cls)}
+                          className={cn(
+                            'px-1.5 py-0.5 rounded text-[10px] font-mono transition-all border',
+                            classFilter === cls
+                              ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                              : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                          )}
+                        >
+                          {cls}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Confidence Threshold */}
+                  <div>
+                    <label className="text-[10px] font-mono text-slate-600 uppercase tracking-widest flex items-center justify-between">
+                      <span>Min Confidence</span>
+                      <span className="text-cyan-400">{confidenceThreshold}%</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={confidenceThreshold}
+                      onChange={(e) => setConfidenceThreshold(parseInt(e.target.value))}
+                      className="w-full mt-1 accent-cyan-500"
+                      style={{ height: '4px' }}
+                    />
+                  </div>
+
+                  {/* Reset Button */}
+                  <button
+                    onClick={() => {
+                      setClassFilter('all')
+                      setConfidenceThreshold(0)
+                      setSearchQuery('')
+                    }}
+                    className="w-full px-2 py-1 text-[10px] font-mono text-slate-600 hover:text-slate-400 border border-slate-700 rounded hover:bg-slate-900/50 transition-all"
+                  >
+                    Reset
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </motion.div>
+
+        {/* ── Live Log Stream ──────────────────────────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.35 }}
           className="glass rounded-xl overflow-hidden flex flex-col"
           style={{ minHeight: '320px' }}
@@ -525,7 +691,7 @@ export default function LiveCapturePage() {
                 LIVE
               </span>
             )}
-            <span className="ml-auto text-[10px] font-mono text-slate-600">{logs.length} records</span>
+            <span className="ml-auto text-[10px] font-mono text-slate-600">{filtered.length} {filtered.length !== logs.length ? 'filtered' : 'total'} records</span>
             <button
               onClick={() => setAutoScroll((v) => !v)}
               id="autoscroll-toggle"
@@ -556,7 +722,7 @@ export default function LiveCapturePage() {
           {/* Scrollable log area */}
           <div className="flex-1 overflow-y-auto p-2 space-y-0.5 max-h-96">
             <AnimatePresence initial={false}>
-              {logs.length === 0 ? (
+              {filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-slate-600">
                   <Radar className="w-10 h-10 mb-3 opacity-20" />
                   <p className="text-sm font-mono">
@@ -564,7 +730,7 @@ export default function LiveCapturePage() {
                   </p>
                 </div>
               ) : (
-                logs.map((log, i) => <LogRow key={log.id} log={log} index={i} />)
+                filtered.map((log, i) => <LogRow key={log.id} log={log} index={i} />)
               )}
             </AnimatePresence>
             <div ref={logEndRef} />

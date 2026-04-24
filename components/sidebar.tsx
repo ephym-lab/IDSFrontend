@@ -18,6 +18,9 @@ import {
   Radar,
   ExternalLink,
   FileText,
+  Users,
+  ShieldAlert,
+  MessageSquare,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useCaptureStatus, useStartCapture, useStopCapture } from '@/lib/api'
@@ -57,9 +60,27 @@ const navigationItems = [
     icon: Upload,
   },
   {
+    name: 'Feedback',
+    href: '/dashboard/feedback',
+    icon: MessageSquare,
+  },
+  {
     name: 'Reports',
     href: '/dashboard/reports',
     icon: FileText,
+  },
+]
+
+const adminNavItems = [
+  {
+    name: 'User Management',
+    href: '/dashboard/admin/users',
+    icon: Users,
+  },
+  {
+    name: 'Feedback Management',
+    href: '/dashboard/admin/feedback',
+    icon: MessageSquare,
   },
 ]
 
@@ -205,6 +226,51 @@ export function Sidebar() {
               </Link>
             )
           })}
+
+          {/* Admin section — only visible to admins */}
+          {user?.role === 'admin' && (
+            <>
+              <div className="pt-2 pb-1 px-3">
+                <div className="flex items-center gap-1.5">
+                  <ShieldAlert className="w-3 h-3 text-amber-400/70" />
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-400/70 font-mono">Admin</p>
+                </div>
+              </div>
+              {adminNavItems.map((item) => {
+                const Icon = item.icon
+                const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={handleNavClick}
+                    id={`nav-${item.name.toLowerCase().replace(/\s/g, '-')}`}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative',
+                      isActive ? 'text-amber-300' : 'text-slate-500 hover:text-slate-200'
+                    )}
+                    style={
+                      isActive
+                        ? {
+                            background: 'linear-gradient(135deg, rgba(251,191,36,0.1), rgba(245,158,11,0.05))',
+                            border: '1px solid rgba(251,191,36,0.2)',
+                          }
+                        : { background: 'transparent', border: '1px solid transparent' }
+                    }
+                  >
+                    <Icon
+                      className={cn(
+                        'w-4 h-4 flex-shrink-0',
+                        isActive ? 'text-amber-400' : 'text-slate-600 group-hover:text-slate-400'
+                      )}
+                    />
+                    <span className="font-medium text-sm">{item.name}</span>
+                    {isActive && <ChevronRight className="w-3 h-3 ml-auto text-amber-500/60" />}
+                  </Link>
+                )
+              })}
+            </>
+          )}
         </div>
 
         {/* Live Capture Control */}
@@ -273,7 +339,12 @@ export function Sidebar() {
                 </span>
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-300 truncate">{user?.full_name ?? 'User'}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-medium text-slate-300 truncate">{user?.full_name ?? 'User'}</p>
+                  {user?.role === 'admin' && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 flex-shrink-0">Admin</span>
+                  )}
+                </div>
                 <p className="text-[10px] text-slate-600 truncate font-mono">{user?.email ?? ''}</p>
               </div>
             </div>

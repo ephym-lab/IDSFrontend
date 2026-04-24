@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useAlerts, Alert } from '@/lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, Filter, X, ChevronDown, ChevronUp, ShieldAlert } from 'lucide-react'
+import { Bell, Filter, X, ChevronDown, ChevronUp, ShieldAlert, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const fade = (delay = 0) => ({
@@ -89,6 +89,11 @@ export default function AlertsPage() {
   const [limitFilter, setLimitFilter] = useState(50)
   const [sortKey, setSortKey] = useState<SortKey>('timestamp')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [attackTypeFilter, setAttackTypeFilter] = useState<string>('all')
+  const [ipFilter, setIpFilter] = useState('')
+  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(0)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const { data, isLoading } = useAlerts({
     limit: limitFilter,
@@ -96,8 +101,26 @@ export default function AlertsPage() {
   })
 
   const alerts = data?.alerts ?? []
+  
+  // Get unique attack types
+  const uniqueAttackTypes = Array.from(new Set(alerts.map(a => a.attack_type))).sort()
 
-  const sorted = [...alerts].sort((a, b) => {
+  // Apply all filters
+  const filtered = alerts.filter(a => {
+    // Severity filter
+    if (severityFilter && a.severity !== severityFilter) return false
+    // Search query (IP or attack type)
+    if (searchQuery && !a.src_ip.includes(searchQuery) && !a.dst_ip.includes(searchQuery) && !a.attack_type.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    // Attack type filter
+    if (attackTypeFilter !== 'all' && a.attack_type !== attackTypeFilter) return false
+    // IP filter
+    if (ipFilter && !a.src_ip.includes(ipFilter) && !a.dst_ip.includes(ipFilter)) return false
+    // Confidence threshold
+    if (Math.round(a.confidence * 100) < confidenceThreshold) return false
+    return true
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
     let av: string | number = a[sortKey as keyof Alert] as string | number
     let bv: string | number = b[sortKey as keyof Alert] as string | number
     if (typeof av === 'string') av = av.toLowerCase()
@@ -125,51 +148,20 @@ export default function AlertsPage() {
             Alerts
           </h1>
           <p className="text-slate-600 text-sm mt-0.5">
-            {isLoading ? 'Loading…' : `${data?.count ?? 0} alerts found`}
+            {isLoading ? 'Loading…' : `${sorted.length} ${sorted.length !== alerts.length ? 'filtered' : 'total'} alerts found`}
           </p>
         </div>
-        {(sorted.filter(a => a.severity === 'High').length > 0) && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20">
-            <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
-            <span className="text-xs font-semibold text-red-400 font-mono">
-              {sorted.filter(a => a.severity === 'High').length} HIGH severity
-            </span>
-          </div>
-        )}
-      </motion.div>
-
-      {/* Filters */}
-      <motion.div variants={fade(0.05)} className="glass rounded-xl p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 text-slate-500 text-sm">
-            <Filter className="w-4 h-4" />
-            <span className="font-medium">Filter:</span>
-          </div>
-
-          {/* Severity pills */}
-          <div className="flex gap-2">
-            {['', 'High', 'Medium', 'Low'].map((s) => (
-              <button
-                key={s}
-                onClick={() => setSeverityFilter(s)}
-                className={cn(
-                  'px-3 py-1 rounded-full text-xs font-semibold font-mono transition-all',
-                  severityFilter === s
-                    ? s === 'High' ? 'bg-red-500/20 text-red-400 border border-red-500/40'
-                      : s === 'Medium' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                      : s === 'Low' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                      : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
-                    : 'bg-transparent text-slate-600 border border-slate-800 hover:border-slate-600'
-                )}
-              >
-                {s || 'All'}
-              </button>
-            ))}
-          </div>
-
-          {/* Limit */}
-          <div className="flex items-center gap-2 ml-auto">
-            <label className="text-xs text-slate-600">Limit:</label>
+        <div className="flex items-center gap-3">
+          {(sorted.filter(a => a.severity === 'High').length > 0) && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20">
+              <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
+              <span className="text-xs font-semibold text-red-400 font-mono">
+                {sorted.filter(a => a.severity === 'High').length} HIGH severity
+              </span>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-600 font-mono">LIMIT:</label>
             <select
               value={limitFilter}
               onChange={(e) => setLimitFilter(Number(e.target.value))}
@@ -179,16 +171,157 @@ export default function AlertsPage() {
                 <option key={n} value={n}>{n}</option>
               ))}
             </select>
-            {severityFilter && (
-              <button
-                onClick={() => setSeverityFilter('')}
-                className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-400 transition-colors"
-              >
-                <X className="w-3 h-3" /> Clear
-              </button>
-            )}
           </div>
         </div>
+      </motion.div>
+
+      {/* Filters */}
+      <motion.div variants={fade(0.05)} className="space-y-3">
+        {/* Quick Search & Severity */}
+        <div className="glass rounded-xl p-4 space-y-3">
+          <div className="flex gap-3 flex-col sm:flex-row">
+            {/* Search Bar */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+              <input
+                type="text"
+                placeholder="Search by IP or attack type..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-slate-900/50 border border-slate-700 rounded text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+              />
+            </div>
+            
+            {/* Severity Filter */}
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-slate-600 font-mono">SEVERITY:</span>
+              <div className="flex gap-1">
+                {['', 'High', 'Medium', 'Low'].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSeverityFilter(s)}
+                    className={cn(
+                      'px-2 py-1 rounded-full text-xs font-semibold font-mono transition-all',
+                      severityFilter === s
+                        ? s === 'High' ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                          : s === 'Medium' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                          : s === 'Low' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                          : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
+                        : 'bg-transparent text-slate-600 border border-slate-800 hover:border-slate-600'
+                    )}
+                  >
+                    {s || 'All'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Advanced Toggle */}
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center gap-2 text-xs font-mono text-slate-600 hover:text-slate-400 transition-colors"
+          >
+            {showAdvanced ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            <span className="uppercase tracking-widest">
+              {showAdvanced ? 'Hide' : 'Show'} Advanced Filters
+            </span>
+            {(attackTypeFilter !== 'all' || ipFilter || confidenceThreshold > 0) && (
+              <span className="ml-1 px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 text-[10px]">
+                {[
+                  attackTypeFilter !== 'all' ? 1 : 0,
+                  ipFilter ? 1 : 0,
+                  confidenceThreshold > 0 ? 1 : 0,
+                ].reduce((a, b) => a + b, 0)} active
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Advanced Filters */}
+        <AnimatePresence>
+          {showAdvanced && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="glass rounded-xl p-4 space-y-3 border border-slate-700/30"
+            >
+              {/* Attack Type Filter */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest">Attack Type</label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <button
+                    onClick={() => setAttackTypeFilter('all')}
+                    className={cn(
+                      'px-2 py-1 rounded text-xs font-mono transition-all border',
+                      attackTypeFilter === 'all'
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                        : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                    )}
+                  >
+                    All
+                  </button>
+                  {uniqueAttackTypes.map(type => (
+                    <button
+                      key={type}
+                      onClick={() => setAttackTypeFilter(type)}
+                      className={cn(
+                        'px-2 py-1 rounded text-xs font-mono transition-all border',
+                        attackTypeFilter === type
+                          ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                          : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                      )}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* IP Address Filter */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest">IP Address (partial match)</label>
+                <input
+                  type="text"
+                  placeholder="Search by IP..."
+                  value={ipFilter}
+                  onChange={(e) => setIpFilter(e.target.value)}
+                  className="w-full mt-2 px-3 py-2 bg-slate-900/50 border border-slate-700 rounded text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+                />
+              </div>
+
+              {/* Confidence Threshold */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest flex items-center justify-between">
+                  <span>Min Confidence</span>
+                  <span className="text-cyan-400">{confidenceThreshold}%</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={confidenceThreshold}
+                  onChange={(e) => setConfidenceThreshold(parseInt(e.target.value))}
+                  className="w-full mt-2 accent-cyan-500"
+                />
+              </div>
+
+              {/* Reset Button */}
+              <button
+                onClick={() => {
+                  setAttackTypeFilter('all')
+                  setIpFilter('')
+                  setConfidenceThreshold(0)
+                  setSearchQuery('')
+                }}
+                className="w-full px-3 py-2 text-xs font-mono text-slate-600 hover:text-slate-400 border border-slate-700 rounded hover:bg-slate-900/50 transition-all"
+              >
+                Reset All Filters
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
 
       {/* Table */}

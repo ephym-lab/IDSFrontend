@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useLogs } from '@/lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ScrollText, Filter, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ScrollText, Filter, X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const fade = (delay = 0) => ({
@@ -40,6 +40,11 @@ export default function TrafficPage() {
   const [timeRange, setTimeRange] = useState(0) // hours; 0 = all
   const [page, setPage] = useState(0)
   const [typeFilter, setTypeFilter] = useState<'' | 'attack' | 'normal'>('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [classFilter, setClassFilter] = useState<string>('all')
+  const [ipFilter, setIpFilter] = useState('')
+  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(0)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const fromTime = timeRange > 0
     ? new Date(Date.now() - timeRange * 3600 * 1000).toISOString()
@@ -48,11 +53,25 @@ export default function TrafficPage() {
   const { data, isLoading } = useLogs({ limit: 500, from_time: fromTime })
 
   const allLogs = data?.logs ?? []
-  const filtered = typeFilter === 'attack'
-    ? allLogs.filter(l => l.is_attack)
-    : typeFilter === 'normal'
-      ? allLogs.filter(l => !l.is_attack)
-      : allLogs
+  
+  // Get unique classes
+  const uniqueClasses = Array.from(new Set(allLogs.map(l => l.predicted_class))).sort()
+
+  // Apply all filters
+  const filtered = allLogs.filter(l => {
+    // Type filter
+    if (typeFilter === 'attack' && !l.is_attack) return false
+    if (typeFilter === 'normal' && l.is_attack) return false
+    // Search query (IP or class)
+    if (searchQuery && !l.src_ip.includes(searchQuery) && !l.dst_ip.includes(searchQuery) && !l.predicted_class.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    // Class filter
+    if (classFilter !== 'all' && l.predicted_class !== classFilter) return false
+    // IP filter
+    if (ipFilter && !l.src_ip.includes(ipFilter) && !l.dst_ip.includes(ipFilter)) return false
+    // Confidence threshold
+    if (Math.round(l.confidence * 100) < confidenceThreshold) return false
+    return true
+  })
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const pageLogs = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -79,62 +98,175 @@ export default function TrafficPage() {
       </motion.div>
 
       {/* Filters */}
-      <motion.div variants={fade(0.05)} className="glass rounded-xl p-4">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Time range */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-600" />
-            <span className="text-xs text-slate-600 font-medium">Time:</span>
-            <div className="flex gap-1">
-              {TIME_RANGES.map(({ label, hours }) => (
-                <button
-                  key={label}
-                  onClick={() => { setTimeRange(hours); setPage(0) }}
-                  className={cn(
-                    'px-2.5 py-1 rounded text-xs font-mono transition-all',
-                    timeRange === hours
-                      ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                      : 'text-slate-600 border border-slate-800 hover:border-slate-600'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
+      <motion.div variants={fade(0.05)} className="space-y-3">
+        {/* Quick Search & Type Filters */}
+        <div className="glass rounded-xl p-4 space-y-3">
+          <div className="flex gap-3 flex-col sm:flex-row">
+            {/* Search Bar */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+              <input
+                type="text"
+                placeholder="Search by IP or class..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-slate-900/50 border border-slate-700 rounded text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+              />
+            </div>
+
+            {/* Time & Type Quick Filters */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-slate-600 font-mono">TIME:</span>
+                <div className="flex gap-1">
+                  {TIME_RANGES.map(({ label, hours }) => (
+                    <button
+                      key={label}
+                      onClick={() => { setTimeRange(hours); setPage(0) }}
+                      className={cn(
+                        'px-2 py-1 rounded text-xs font-mono transition-all border',
+                        timeRange === hours
+                          ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                          : 'text-slate-600 border-slate-800 hover:border-slate-600'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Type filter */}
+          {/* Type Filter */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-600 font-medium">Type:</span>
+            <span className="text-xs text-slate-600 font-mono">TYPE:</span>
             {(['', 'attack', 'normal'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => { setTypeFilter(t); setPage(0) }}
                 className={cn(
-                  'px-2.5 py-1 rounded text-xs font-mono transition-all',
+                  'px-2 py-1 rounded-full text-xs font-mono transition-all border',
                   typeFilter === t
                     ? t === 'attack'
-                      ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      ? 'bg-red-500/15 border-red-500/40 text-red-400'
                       : t === 'normal'
-                        ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                        : 'bg-slate-700/30 text-slate-300 border border-slate-700'
-                    : 'text-slate-600 border border-slate-800 hover:border-slate-600'
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                        : 'bg-slate-700/30 border-slate-700 text-slate-300'
+                    : 'text-slate-600 border-slate-800 hover:border-slate-600'
                 )}
               >
-                {t === '' ? 'All' : t.charAt(0).toUpperCase() + t.slice(1)}
+                {t === '' ? 'All' : t === 'attack' ? '⚠ Attacks' : '✓ Normal'}
               </button>
             ))}
           </div>
 
-          {(typeFilter || timeRange > 0) && (
-            <button
-              onClick={() => { setTypeFilter(''); setTimeRange(0); setPage(0) }}
-              className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-400 transition-colors ml-auto"
-            >
-              <X className="w-3 h-3" /> Clear
-            </button>
-          )}
+          {/* Advanced Toggle */}
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center gap-2 text-xs font-mono text-slate-600 hover:text-slate-400 transition-colors"
+          >
+            {showAdvanced ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            <span className="uppercase tracking-widest">
+              {showAdvanced ? 'Hide' : 'Show'} Advanced Filters
+            </span>
+            {(classFilter !== 'all' || ipFilter || confidenceThreshold > 0) && (
+              <span className="ml-1 px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 text-[10px]">
+                {[
+                  classFilter !== 'all' ? 1 : 0,
+                  ipFilter ? 1 : 0,
+                  confidenceThreshold > 0 ? 1 : 0,
+                ].reduce((a, b) => a + b, 0)} active
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Advanced Filters */}
+        <AnimatePresence>
+          {showAdvanced && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="glass rounded-xl p-4 space-y-3 border border-slate-700/30"
+            >
+              {/* Class Filter */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest">Predicted Class</label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <button
+                    onClick={() => setClassFilter('all')}
+                    className={cn(
+                      'px-2 py-1 rounded text-xs font-mono transition-all border',
+                      classFilter === 'all'
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                        : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                    )}
+                  >
+                    All
+                  </button>
+                  {uniqueClasses.map(cls => (
+                    <button
+                      key={cls}
+                      onClick={() => setClassFilter(cls)}
+                      className={cn(
+                        'px-2 py-1 rounded text-xs font-mono transition-all border',
+                        classFilter === cls
+                          ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
+                          : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                      )}
+                    >
+                      {cls}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* IP Address Filter */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest">IP Address (partial match)</label>
+                <input
+                  type="text"
+                  placeholder="Search by IP..."
+                  value={ipFilter}
+                  onChange={(e) => setIpFilter(e.target.value)}
+                  className="w-full mt-2 px-3 py-2 bg-slate-900/50 border border-slate-700 rounded text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+                />
+              </div>
+
+              {/* Confidence Threshold */}
+              <div>
+                <label className="text-xs font-mono text-slate-600 uppercase tracking-widest flex items-center justify-between">
+                  <span>Min Confidence</span>
+                  <span className="text-cyan-400">{confidenceThreshold}%</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={confidenceThreshold}
+                  onChange={(e) => setConfidenceThreshold(parseInt(e.target.value))}
+                  className="w-full mt-2 accent-cyan-500"
+                />
+              </div>
+
+              {/* Reset Button */}
+              <button
+                onClick={() => {
+                  setClassFilter('all')
+                  setIpFilter('')
+                  setConfidenceThreshold(0)
+                  setSearchQuery('')
+                  setPage(0)
+                }}
+                className="w-full px-3 py-2 text-xs font-mono text-slate-600 hover:text-slate-400 border border-slate-700 rounded hover:bg-slate-900/50 transition-all"
+              >
+                Reset All Filters
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
 
       {/* Table */}

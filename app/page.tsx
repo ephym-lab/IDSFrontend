@@ -58,6 +58,7 @@ export default function Home() {
             <span className="font-bold text-slate-100">Network IDS Command Center</span>
           </div>
           <div className="flex items-center gap-3">
+
             <Link href="/auth/signin">
               <Button variant="ghost" className="text-slate-300 hover:text-slate-100 hover:bg-slate-800/50">
                 Sign In
@@ -67,6 +68,11 @@ export default function Home() {
               <Button className="bg-blue-600 hover:bg-blue-700">
                 Sign Up
                 <ArrowRight className="w-4 h-4 ml-2" />
+              </Button> 
+            </Link>
+            <Link href="/help">
+              <Button variant="ghost" className="text-slate-300 hover:text-slate-100 hover:bg-slate-800/50">
+                Help
               </Button>
             </Link>
           </div>

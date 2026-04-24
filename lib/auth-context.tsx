@@ -11,15 +11,29 @@ export interface User {
   id: number
   full_name: string
   email: string
+  role: 'user' | 'admin'
   created_at: string
 }
+
+/** Returned by signinStep1 — admin gets a token immediately, regular users need OTP */
+export type SigninStep1Result =
+  | { requiresOtp: true; message: string }
+  | { requiresOtp: false }
 
 interface AuthContextType {
   user: User | null
   token: string | null
   isLoading: boolean
-  signin: (email: string, password: string) => Promise<void>
-  signup: (full_name: string, email: string, password: string) => Promise<void>
+  /** Step 1 of login. Admin → stores session & returns requiresOtp:false. Regular user → emails OTP & returns requiresOtp:true. */
+  signinStep1: (email: string, password: string) => Promise<SigninStep1Result>
+  /** Step 2 of login – verifies OTP, stores session */
+  signinStep2: (email: string, otp: string) => Promise<void>
+  /** Step 1 of signup – creates pending account, sends OTP */
+  signupStep1: (full_name: string, email: string, password: string) => Promise<string>
+  /** Step 2 of signup – verifies OTP, activates account, stores session */
+  signupStep2: (email: string, otp: string) => Promise<void>
+  /** Resend OTP to the given email (works for both flows) */
+  resendOtp: (email: string) => Promise<string>
   logout: () => void
 }
 
@@ -72,12 +86,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const signin = async (email: string, password: string) => {
+  // ── Login Step 1: admin → JWT directly; regular user → OTP email ──────────
+  const signinStep1 = async (email: string, password: string): Promise<SigninStep1Result> => {
+    // The backend returns either { message } (regular user) or { access_token, user, ... } (admin)
+    const data = await authFetch<
+      { message: string } | { access_token: string; token_type: string; user: User }
+    >('/auth/login', { email, password })
+
+    if ('access_token' in data) {
+      // Admin path — session is established right away
+      setToken(data.access_token)
+      setUser(data.user)
+      localStorage.setItem('access_token', data.access_token)
+      localStorage.setItem('user', JSON.stringify(data.user))
+      return { requiresOtp: false }
+    }
+
+    // Regular user path — OTP was emailed
+    return { requiresOtp: true, message: data.message }
+  }
+
+  // ── Login Step 2: verify OTP, store session ──────────────────────────────
+  const signinStep2 = async (email: string, otp: string): Promise<void> => {
     const data = await authFetch<{
       access_token: string
       token_type: string
       user: User
-    }>('/auth/login', { email, password })
+    }>('/auth/login/verify-otp', { email, otp })
 
     setToken(data.access_token)
     setUser(data.user)
@@ -85,17 +120,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('user', JSON.stringify(data.user))
   }
 
-  const signup = async (full_name: string, email: string, password: string) => {
+  // ── Signup Step 1: create pending account, send OTP ─────────────────────
+  const signupStep1 = async (full_name: string, email: string, password: string): Promise<string> => {
+    const data = await authFetch<{ message: string }>('/auth/signup', { full_name, email, password })
+    return data.message
+  }
+
+  // ── Signup Step 2: verify OTP, activate account, store session ──────────
+  const signupStep2 = async (email: string, otp: string): Promise<void> => {
     const data = await authFetch<{
       access_token: string
       token_type: string
       user: User
-    }>('/auth/signup', { full_name, email, password })
+    }>('/auth/signup/verify-otp', { email, otp })
 
     setToken(data.access_token)
     setUser(data.user)
     localStorage.setItem('access_token', data.access_token)
     localStorage.setItem('user', JSON.stringify(data.user))
+  }
+
+  // ── Resend OTP ───────────────────────────────────────────────────────────
+  const resendOtp = async (email: string): Promise<string> => {
+    const data = await authFetch<{ message: string }>('/auth/resend-otp', { email })
+    return data.message
   }
 
   const logout = () => {
@@ -108,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, signin, signup, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, signinStep1, signinStep2, signupStep1, signupStep2, resendOtp, logout }}>
       {children}
     </AuthContext.Provider>
   )

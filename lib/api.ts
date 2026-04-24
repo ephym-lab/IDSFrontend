@@ -288,3 +288,209 @@ export function useUploadCSV() {
     },
   })
 }
+
+// ─── Admin ────────────────────────────────────────────────────────────────
+
+export interface AdminUser {
+  id: number
+  full_name: string
+  email: string
+  is_verified: number
+  admin_verified: number
+  role: 'user' | 'admin'
+  created_at: string
+}
+
+export interface AdminUsersResponse {
+  count: number
+  users: AdminUser[]
+}
+
+export function useAdminUsers() {
+  return useQuery({
+    queryKey: ['admin-users'],
+    queryFn: () => apiCall<AdminUsersResponse>('/admin/users'),
+    staleTime: 10000,
+    refetchInterval: 15000,
+  })
+}
+
+export function useAdminPendingUsers() {
+  return useQuery({
+    queryKey: ['admin-users-pending'],
+    queryFn: () => apiCall<AdminUsersResponse>('/admin/users/pending'),
+    staleTime: 10000,
+    refetchInterval: 15000,
+  })
+}
+
+export function useApproveUser() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (userId: number) =>
+      apiCall<{ message: string }>(`/admin/users/${userId}/approve`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-users-pending'] })
+    },
+  })
+}
+
+export function useRevokeUser() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (userId: number) =>
+      apiCall<{ message: string }>(`/admin/users/${userId}/revoke`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-users-pending'] })
+    },
+  })
+}
+
+// ─── Feedback ─────────────────────────────────────────────────────────────
+
+export type FeedbackCategory = 'bug' | 'suggestion' | 'general'
+export type FeedbackStatus = 'open' | 'reviewed' | 'resolved' | 'dismissed'
+
+export interface Feedback {
+  id: number
+  user_id: number
+  title: string
+  message: string
+  category: FeedbackCategory
+  status: FeedbackStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface FeedbacksResponse {
+  count: number
+  feedbacks: Feedback[]
+}
+
+export interface SubmitFeedbackRequest {
+  title: string
+  message: string
+  category?: FeedbackCategory
+}
+
+export interface SubmitFeedbackResponse {
+  message: string
+  feedback: Feedback
+}
+
+export interface UpdateFeedbackRequest {
+  title?: string
+  message?: string
+  category?: FeedbackCategory
+}
+
+export interface UpdateFeedbackResponse {
+  message: string
+  feedback: Feedback
+}
+
+export interface DeleteFeedbackResponse {
+  message: string
+}
+
+export interface UpdateFeedbackStatusRequest {
+  status: FeedbackStatus
+}
+
+export interface UpdateFeedbackStatusResponse {
+  message: string
+  feedback: Feedback
+}
+
+export interface AdminFeedbacksFilter {
+  limit?: number
+  status?: FeedbackStatus
+  category?: FeedbackCategory
+}
+
+export function useSubmitFeedback() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: SubmitFeedbackRequest) =>
+      apiCall<SubmitFeedbackResponse>('/feedback', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['feedbacks'] })
+    },
+  })
+}
+
+export function useFeedbacks(limit: number = 100) {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  const qs = `?${params.toString()}`
+
+  return useQuery({
+    queryKey: ['feedbacks', limit],
+    queryFn: () => apiCall<FeedbacksResponse>(`/feedback${qs}`),
+    staleTime: 5000,
+  })
+}
+
+export function useUpdateFeedback() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ feedbackId, data }: { feedbackId: number; data: UpdateFeedbackRequest }) =>
+      apiCall<UpdateFeedbackResponse>(`/feedback/${feedbackId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['feedbacks'] })
+    },
+  })
+}
+
+export function useDeleteFeedback() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (feedbackId: number) =>
+      apiCall<DeleteFeedbackResponse>(`/feedback/${feedbackId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['feedbacks'] })
+    },
+  })
+}
+
+export function useAdminFeedbacks(filters?: AdminFeedbacksFilter) {
+  const params = new URLSearchParams()
+  if (filters?.limit) params.set('limit', String(filters.limit))
+  if (filters?.status) params.set('status', filters.status)
+  if (filters?.category) params.set('category', filters.category)
+  const qs = params.toString() ? `?${params.toString()}` : ''
+
+  return useQuery({
+    queryKey: ['admin-feedbacks', filters],
+    queryFn: () => apiCall<FeedbacksResponse>(`/admin/feedbacks${qs}`),
+    staleTime: 5000,
+  })
+}
+
+export function useUpdateFeedbackStatus() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      feedbackId,
+      status,
+    }: {
+      feedbackId: number
+      status: FeedbackStatus
+    }) =>
+      apiCall<UpdateFeedbackStatusResponse>(`/admin/feedbacks/${feedbackId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-feedbacks'] })
+    },
+  })
+}
